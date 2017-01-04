@@ -25,7 +25,7 @@ globalBaseURL = config.get('CROWDSERVER','baseUrl')
 r = requests.get(globalBaseURL + '/rest/usermanagement/1/group/membership', 
 	auth=globalauth)
 
-tree = ET.fromstring(r.text)
+tree = ET.fromstring(r.text.decode('utf-8'))
 
 userset = set()
 groupset = set()
@@ -56,13 +56,19 @@ fuserattrs = open('user-details.csv', 'w')
 
 fuserattrs.write('userid,firstname,lastname,displayname,email,active,lastactive,groups\n')
 
+usernum = 0
+activenum = 0
+seenin7days = 0
+weekagoseconds = (time.time() ) - (8 * 25 * 60 * 60)
+
 for user in sorted(userset):
 	r = requests.get(globalBaseURL + '/rest/usermanagement/1/user?username='+user+'&expand=attributes',
-		auth=globalauth)
-	tree = ET.fromstring(r.text)
+		auth=globalauth, stream=True)
+	tree = ET.fromstring(unicode(r.content, errors='ignore'))
 	#print r.text
 	for node in tree.getiterator('user'):
-		print('found a user '+ user )
+		usernum = usernum + 1 
+		print('found a user '+ user + " - %d" % usernum)
 		firstname = node.find('.//first-name').text
 		lastname = node.find('.//last-name').text
 		displayname = node.find('.//display-name').text
@@ -72,9 +78,14 @@ for user in sorted(userset):
 		lastactivestr = ''
 		for lastactivenode in lastactivenodeiter:
 			epochtext = lastactivenode.find('.//value').text
+			epochseconds = time.localtime(float(epochtext)/1000)
+			#seenin7days += (float(epochtext)/1000 > weekagoseconds)
 			#print epochtext
 			lastactivestr = time.strftime('%Y-%m-%d %H:%M:%S', 
-				time.localtime(float(epochtext)/1000))
+				epochseconds)
+			if (float(epochtext)/1000 > weekagoseconds):
+				print("### Seen in last ~7 days")
+				seenin7days += 1
 		fuserattrs.write(user + ',' 
 			+ firstname + ',' 
 			+ lastname + ',' 
@@ -84,6 +95,11 @@ for user in sorted(userset):
 			+ lastactivestr +','
 			+ "\"" + ",".join(userDict[user]) + "\"" 
 			+ '\n')
+		if lastactivestr != '':
+			activenum = activenum + 1
 		fuserattrs.flush()
 
 fuserattrs.close()
+print("%d active users" % activenum)
+print("%d active users in the past ~7 days" % seenin7days)
+print("%d total users" % usernum)
